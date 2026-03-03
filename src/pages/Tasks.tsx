@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, CheckSquare, MoreVertical, Calendar, Flag, ChevronRight, X, Save, Trash2, Upload } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Search, CheckSquare, MoreVertical, Calendar, Flag, ChevronRight, X, Save, Trash2, Upload, EyeOff, Check, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
 
 interface Task {
   id?: number;
@@ -9,19 +11,33 @@ interface Task {
   priority: string;
   due_date: string;
   completed: number;
+  folder: string;
   tags: string;
+}
+
+interface FolderData {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [isCreatorOpen, setIsCreatorOpen] = useState(false);
   const [currentTask, setCurrentTask] = useState<Task | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('Todas');
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+
+  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchTasks();
+    fetchFolders();
   }, []);
 
   const fetchTasks = async () => {
@@ -30,25 +46,65 @@ export default function TasksPage() {
     setTasks(data);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentTask) return;
-    
-    const method = currentTask.id ? 'PUT' : 'POST';
-    const url = currentTask.id ? `/api/tasks/${currentTask.id}` : '/api/tasks';
+  const fetchFolders = async () => {
+    const res = await fetch('/api/folders?type=tasks');
+    const data = await res.json();
+    setFolders(data);
+  };
 
+  const handleCreateFolder = async () => {
+    if (!newFolderName) return;
     try {
-      await fetch(url, {
-        method,
+      await fetch('/api/folders', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentTask)
+        body: JSON.stringify({ name: newFolderName, type: 'tasks', color: '#6366f1' })
       });
-      setIsCreatorOpen(false);
-      fetchTasks();
+      setNewFolderName('');
+      setIsFolderModalOpen(false);
+      fetchFolders();
     } catch (error) {
-      console.error("Error saving task:", error);
+      console.error("Error creating folder:", error);
     }
   };
+
+  const handleSave = async (taskToSave: Task) => {
+    if (!taskToSave) return;
+    setIsSaving(true);
+    
+    const method = taskToSave.id ? 'PUT' : 'POST';
+    const url = taskToSave.id ? `/api/tasks/${taskToSave.id}` : '/api/tasks';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskToSave)
+      });
+      const savedTask = await res.json();
+      if (!taskToSave.id) {
+        setCurrentTask(savedTask);
+      }
+      fetchTasks();
+      setTimeout(() => setIsSaving(false), 1000);
+    } catch (error) {
+      console.error("Error saving task:", error);
+      setIsSaving(false);
+    }
+  };
+
+  // Auto-save logic
+  useEffect(() => {
+    if (isCreatorOpen && currentTask) {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => {
+        handleSave(currentTask);
+      }, 2000);
+    }
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [currentTask?.title, currentTask?.description, currentTask?.priority, currentTask?.due_date, currentTask?.folder]);
 
   const toggleComplete = async (task: Task) => {
     const updated = { ...task, completed: task.completed ? 0 : 1 };
@@ -68,6 +124,7 @@ export default function TasksPage() {
     if (!confirm('¿Estás seguro de que quieres eliminar esta tarea?')) return;
     try {
       await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      setIsCreatorOpen(false);
       fetchTasks();
     } catch (error) {
       console.error("Error deleting task:", error);
@@ -76,9 +133,17 @@ export default function TasksPage() {
 
   const filteredTasks = tasks.filter(t => 
     (t.title.toLowerCase().includes(search.toLowerCase())) &&
-    (filter === 'Todas' || (filter === 'Pendientes' && !t.completed) || (filter === 'Completadas' && t.completed)) &&
+    (filter === 'Todas' || (filter === 'Pendientes' && !t.completed) || (filter === 'Completadas' && t.completed) || t.folder === filter) &&
     (!hideCompleted || !t.completed)
   );
+
+  const quillModules = {
+    toolbar: [
+      ['bold', 'italic', 'underline'],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      ['link', 'clean']
+    ],
+  };
 
   return (
     <div className="p-6 lg:p-10 space-y-6 max-w-7xl mx-auto">
@@ -87,8 +152,11 @@ export default function TasksPage() {
           <h2 className="text-3xl font-bold text-slate-800">Mis Tareas</h2>
           <p className="text-slate-400">{tasks.filter(t => !t.completed).length} pendientes · {tasks.filter(t => t.completed).length} completadas</p>
         </div>
-        <button className="p-2 bg-white border border-slate-100 rounded-xl shadow-sm text-slate-500">
-          <Upload size={20} />
+        <button 
+          onClick={() => setIsFolderModalOpen(true)}
+          className="p-2 bg-white border border-slate-100 rounded-xl shadow-sm text-slate-500 hover:text-indigo-600 transition-colors"
+        >
+          <Folder size={20} />
         </button>
       </div>
 
@@ -104,7 +172,7 @@ export default function TasksPage() {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-        {['Todas', 'Pendientes', 'Completadas'].map(f => (
+        {['Todas', 'Pendientes', 'Completadas', ...folders.map(f => f.name)].filter((v, i, a) => a.indexOf(v) === i).map(f => (
           <button 
             key={f}
             onClick={() => setFilter(f)}
@@ -148,11 +216,14 @@ export default function TasksPage() {
             >
               <Check size={18} />
             </button>
-            <div className="flex-1">
+            <div className="flex-1 cursor-pointer" onClick={() => { setCurrentTask(task); setIsCreatorOpen(true); }}>
               <h4 className={cn("font-bold text-slate-800 transition-all", task.completed && "line-through text-slate-300")}>
                 {task.title}
               </h4>
-              <p className="text-xs text-slate-400 line-clamp-1">{task.description}</p>
+              <div 
+                className="text-xs text-slate-400 line-clamp-1 overflow-hidden"
+                dangerouslySetInnerHTML={{ __html: task.description }}
+              />
               <div className="flex gap-2 mt-2">
                 <span className="px-2 py-0.5 bg-orange-50 text-orange-600 text-[10px] font-bold rounded flex items-center gap-1">
                   <Flag size={10} /> {task.priority}
@@ -160,6 +231,11 @@ export default function TasksPage() {
                 <span className="px-2 py-0.5 bg-slate-50 text-slate-400 text-[10px] font-bold rounded flex items-center gap-1">
                   <Calendar size={10} /> {task.due_date || 'Sin fecha'}
                 </span>
+                {task.folder && (
+                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded flex items-center gap-1">
+                    <Folder size={10} /> {task.folder}
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
@@ -182,13 +258,43 @@ export default function TasksPage() {
 
       <button 
         onClick={() => {
-          setCurrentTask({ title: '', description: '', priority: 'Media', due_date: '', completed: 0, tags: '' });
+          setCurrentTask({ title: '', description: '', priority: 'Media', due_date: '', completed: 0, folder: 'Personal', tags: '' });
           setIsCreatorOpen(true);
         }}
         className="fixed bottom-20 right-6 lg:bottom-10 lg:right-10 w-16 h-16 bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-200 flex items-center justify-center hover:scale-110 transition-transform z-40"
       >
         <Plus size={32} />
       </button>
+
+      {/* Folder Modal */}
+      <AnimatePresence>
+        {isFolderModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setIsFolderModalOpen(false)}
+              className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[32px] p-8 w-full max-w-md relative z-10 shadow-2xl"
+            >
+              <h3 className="text-2xl font-bold text-slate-800 mb-6">Nueva Carpeta</h3>
+              <input 
+                type="text" 
+                placeholder="Nombre de la carpeta"
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 mb-6"
+              />
+              <div className="flex gap-4">
+                <button onClick={() => setIsFolderModalOpen(false)} className="flex-1 py-4 text-slate-400 font-bold">Cancelar</button>
+                <button onClick={handleCreateFolder} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100">Crear</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isCreatorOpen && (
@@ -197,10 +303,13 @@ export default function TasksPage() {
               initial={{ y: 100 }}
               animate={{ y: 0 }}
               exit={{ y: 100 }}
-              className="bg-white w-full max-w-lg rounded-t-3xl lg:rounded-3xl p-8 space-y-6"
+              className="bg-white w-full max-w-2xl rounded-t-3xl lg:rounded-3xl p-8 space-y-6 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex justify-between items-center">
-                <h3 className="text-2xl font-bold text-slate-800">{currentTask?.id ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
+                <div className="flex items-center gap-4">
+                  <h3 className="text-2xl font-bold text-slate-800">{currentTask?.id ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
+                  {isSaving && <span className="text-xs text-slate-400 animate-pulse font-medium">Guardando...</span>}
+                </div>
                 <button onClick={() => setIsCreatorOpen(false)} className="p-2 text-slate-400"><X size={24} /></button>
               </div>
 
@@ -215,16 +324,8 @@ export default function TasksPage() {
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none focus:border-indigo-400"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-400 uppercase">Descripción</label>
-                  <textarea 
-                    placeholder="Añade detalles..."
-                    value={currentTask?.description}
-                    onChange={e => setCurrentTask(prev => prev ? ({ ...prev, description: e.target.value }) : null)}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none focus:border-indigo-400 h-24 resize-none"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-400 uppercase">Prioridad</label>
                     <select 
@@ -246,11 +347,36 @@ export default function TasksPage() {
                       className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none"
                     />
                   </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase">Carpeta</label>
+                    <select 
+                      value={currentTask?.folder}
+                      onChange={e => setCurrentTask(prev => prev ? ({ ...prev, folder: e.target.value }) : null)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none"
+                    >
+                      <option>Personal</option>
+                      <option>Trabajo</option>
+                      {folders.map(f => <option key={f.id}>{f.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Descripción</label>
+                  <div className="quill-container bg-slate-50 border border-slate-100 rounded-xl overflow-hidden">
+                    <ReactQuill 
+                      theme="snow"
+                      value={currentTask?.description || ''}
+                      onChange={description => setCurrentTask(prev => prev ? ({ ...prev, description }) : null)}
+                      modules={quillModules}
+                      placeholder="Añade detalles..."
+                    />
+                  </div>
                 </div>
               </div>
 
               <button 
-                onClick={handleSave}
+                onClick={() => handleSave(currentTask!)}
                 className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
               >
                 {currentTask?.id ? 'Guardar Cambios' : 'Crear Tarea'}
@@ -259,11 +385,22 @@ export default function TasksPage() {
           </div>
         )}
       </AnimatePresence>
+
+      <style>{`
+        .quill-container .ql-container {
+          border: none !important;
+          min-height: 150px;
+          font-size: 0.875rem;
+        }
+        .quill-container .ql-toolbar {
+          border: none !important;
+          border-bottom: 1px solid #f1f5f9 !important;
+        }
+      `}</style>
     </div>
   );
 }
 
-import { EyeOff, Check } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }

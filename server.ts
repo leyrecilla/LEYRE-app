@@ -36,6 +36,7 @@ db.exec(`
     priority TEXT,
     due_date DATETIME,
     completed INTEGER DEFAULT 0,
+    folder TEXT,
     tags TEXT
   );
 
@@ -49,6 +50,7 @@ db.exec(`
     status TEXT,
     description TEXT,
     notes TEXT,
+    folder TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -63,7 +65,8 @@ db.exec(`
     total_pages INTEGER DEFAULT 0,
     start_date DATETIME,
     notes TEXT,
-    quotes TEXT
+    quotes TEXT,
+    folder TEXT
   );
 
   CREATE TABLE IF NOT EXISTS birthdays (
@@ -71,7 +74,8 @@ db.exec(`
     user_id INTEGER,
     name TEXT,
     date TEXT,
-    category TEXT
+    category TEXT,
+    folder TEXT
   );
 
   CREATE TABLE IF NOT EXISTS documents (
@@ -91,7 +95,17 @@ db.exec(`
     date TEXT,
     time TEXT,
     priority TEXT,
-    completed INTEGER DEFAULT 0
+    completed INTEGER DEFAULT 0,
+    folder TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    name TEXT,
+    type TEXT, -- 'notes', 'documents', etc.
+    color TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
 
@@ -115,7 +129,8 @@ db.exec(`
     user_id INTEGER,
     title TEXT,
     items TEXT,
-    category TEXT
+    category TEXT,
+    folder TEXT
   );
 `);
 
@@ -144,11 +159,85 @@ async function startServer() {
     }
   });
 
-  // Generic CRUD helper
+  // Auth Routes
+  app.get("/api/auth/google/url", (req, res) => {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) return res.status(500).json({ error: "Google Client ID not configured" });
+    
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'openid email profile',
+      access_type: 'offline',
+      prompt: 'consent'
+    });
+    
+    res.json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` });
+  });
+
+  app.get("/api/auth/google/callback", async (req, res) => {
+    const { code } = req.query;
+    if (!code) return res.status(400).send("No code provided");
+
+    try {
+      const clientId = process.env.GOOGLE_CLIENT_ID;
+      const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+      const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
+
+      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: code as string,
+          client_id: clientId!,
+          client_secret: clientSecret!,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code'
+        })
+      });
+
+      const tokens = await tokenRes.json();
+      const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` }
+      });
+      const userData = await userRes.json();
+
+      // Upsert user
+      let user = db.prepare("SELECT * FROM users WHERE email = ?").get(userData.email);
+      if (!user) {
+        const result = db.prepare("INSERT INTO users (email, name, avatar) VALUES (?, ?, ?)").run(
+          userData.email,
+          userData.name,
+          userData.picture
+        );
+        user = { id: result.lastInsertRowid, ...userData };
+      }
+
+      // In a real app, we'd set a session cookie here.
+      // For this demo, we'll just send a success message.
+      res.send(`
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage({ type: 'OAUTH_SUCCESS', user: ${JSON.stringify(user)} }, '*');
+              window.close();
+            </script>
+          </body>
+        </html>
+      `);
+    } catch (error) {
+      console.error("OAuth Error:", error);
+      res.status(500).send("Authentication failed");
+    }
+  });
+
+  // Generic CRUD helper - GET
   app.get("/api/:table", (req, res) => {
     try {
       const { table } = req.params;
-      const allowedTables = ['users', 'notes', 'tasks', 'learning', 'books', 'lists', 'birthdays', 'documents', 'reminders'];
+      const allowedTables = ['users', 'notes', 'tasks', 'learning', 'books', 'lists', 'birthdays', 'documents', 'reminders', 'folders'];
       if (!allowedTables.includes(table)) {
         return res.status(404).json({ error: "Table not found" });
       }
@@ -160,37 +249,63 @@ async function startServer() {
     }
   });
 
+  // Generic CRUD helper - POST
   app.post("/api/:table", (req, res) => {
     try {
       const { table } = req.params;
-      const keys = Object.keys(req.body);
-      const values = Object.values(req.body);
-      const placeholders = keys.map(() => "?").join(",");
-      const info = db.prepare(`INSERT INTO ${table} (${keys.join(",")}) VALUES (${placeholders})`).run(...values);
-      res.json({ id: info.lastInsertRowid, ...req.body });
+      const allowedTables = ['notes', 'tasks', 'learning', 'books', 'lists', 'birthdays', 'documents', 'reminders', 'folders'];
+      if (!allowedTables.includes(table)) {
+        return res.status(404).json({ error: "Table not found" });
+      }
+      
+      const body = req.body;
+      const keys = Object.keys(body).filter(k => k !== 'id');
+      const values = keys.map(k => typeof body[k] === 'object' ? JSON.stringify(body[k]) : body[k]);
+      const placeholders = keys.map(() => '?').join(', ');
+      
+      const sql = `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`;
+      const result = db.prepare(sql).run(...values);
+      
+      res.json({ id: result.lastInsertRowid, ...body });
     } catch (error) {
       console.error(`Error inserting into ${req.params.table}:`, error);
       res.status(500).json({ error: "Internal Server Error" });
     }
   });
 
+  // Generic CRUD helper - PUT
   app.put("/api/:table/:id", (req, res) => {
     try {
       const { table, id } = req.params;
-      const keys = Object.keys(req.body);
-      const values = Object.values(req.body);
-      const setClause = keys.map(key => `${key} = ?`).join(",");
-      db.prepare(`UPDATE ${table} SET ${setClause} WHERE id = ?`).run(...values, id);
-      res.json({ id, ...req.body });
+      const allowedTables = ['users', 'notes', 'tasks', 'learning', 'books', 'lists', 'birthdays', 'documents', 'reminders', 'folders'];
+      if (!allowedTables.includes(table)) {
+        return res.status(404).json({ error: "Table not found" });
+      }
+      
+      const body = req.body;
+      const keys = Object.keys(body).filter(k => k !== 'id');
+      const values = keys.map(k => typeof body[k] === 'object' ? JSON.stringify(body[k]) : body[k]);
+      const setClause = keys.map(k => `${k} = ?`).join(', ');
+      
+      const sql = `UPDATE ${table} SET ${setClause} WHERE id = ?`;
+      db.prepare(sql).run(...values, id);
+      
+      res.json({ id, ...body });
     } catch (error) {
       console.error(`Error updating ${req.params.table}:`, error);
       res.status(500).json({ error: "Internal Server Error" });
     }
   });
 
+  // Generic CRUD helper - DELETE
   app.delete("/api/:table/:id", (req, res) => {
     try {
       const { table, id } = req.params;
+      const allowedTables = ['notes', 'tasks', 'learning', 'books', 'lists', 'birthdays', 'documents', 'reminders', 'folders'];
+      if (!allowedTables.includes(table)) {
+        return res.status(404).json({ error: "Table not found" });
+      }
+      
       db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
       res.json({ success: true });
     } catch (error) {

@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, BookOpen, MoreVertical, Star, ChevronRight, X, Save, Trash2, Book, Bookmark, Clock, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Search, BookOpen, MoreVertical, Star, ChevronRight, X, Save, Trash2, Book, Bookmark, Clock, CheckCircle, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
 
-interface Book {
+interface BookData {
   id?: number;
   title: string;
   author: string;
@@ -13,17 +15,31 @@ interface Book {
   start_date: string;
   notes: string;
   quotes: string;
+  folder: string;
+}
+
+interface FolderData {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export default function BooksPage() {
-  const [books, setBooks] = useState<Book[]>([]);
+  const [books, setBooks] = useState<BookData[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [currentBook, setCurrentBook] = useState<Book | null>(null);
+  const [currentBook, setCurrentBook] = useState<BookData | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('Todos');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+
+  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchBooks();
+    fetchFolders();
   }, []);
 
   const fetchBooks = async () => {
@@ -32,25 +48,65 @@ export default function BooksPage() {
     setBooks(data);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentBook) return;
+  const fetchFolders = async () => {
+    const res = await fetch('/api/folders?type=books');
+    const data = await res.json();
+    setFolders(data);
+  };
 
-    const method = currentBook.id ? 'PUT' : 'POST';
-    const url = currentBook.id ? `/api/books/${currentBook.id}` : '/api/books';
-
+  const handleCreateFolder = async () => {
+    if (!newFolderName) return;
     try {
-      await fetch(url, {
-        method,
+      await fetch('/api/folders', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentBook)
+        body: JSON.stringify({ name: newFolderName, type: 'books', color: '#6366f1' })
       });
-      setIsEditorOpen(false);
-      fetchBooks();
+      setNewFolderName('');
+      setIsFolderModalOpen(false);
+      fetchFolders();
     } catch (error) {
-      console.error("Error saving book:", error);
+      console.error("Error creating folder:", error);
     }
   };
+
+  const handleSave = async (bookToSave: BookData) => {
+    if (!bookToSave) return;
+    setIsSaving(true);
+
+    const method = bookToSave.id ? 'PUT' : 'POST';
+    const url = bookToSave.id ? `/api/books/${bookToSave.id}` : '/api/books';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bookToSave)
+      });
+      const savedBook = await res.json();
+      if (!bookToSave.id) {
+        setCurrentBook(savedBook);
+      }
+      fetchBooks();
+      setTimeout(() => setIsSaving(false), 1000);
+    } catch (error) {
+      console.error("Error saving book:", error);
+      setIsSaving(false);
+    }
+  };
+
+  // Auto-save logic
+  useEffect(() => {
+    if (isEditorOpen && currentBook) {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => {
+        handleSave(currentBook);
+      }, 2000);
+    }
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [currentBook?.title, currentBook?.author, currentBook?.status, currentBook?.category, currentBook?.notes, currentBook?.quotes, currentBook?.folder]);
 
   const handleDelete = async (id: number) => {
     if (!confirm('¿Estás seguro de que quieres eliminar este libro?')) return;
@@ -65,7 +121,7 @@ export default function BooksPage() {
 
   const filteredBooks = books.filter(b => 
     (b.title.toLowerCase().includes(search.toLowerCase()) || b.author.toLowerCase().includes(search.toLowerCase())) &&
-    (filter === 'Todos' || b.status === filter)
+    (filter === 'Todos' || b.status === filter || b.folder === filter)
   );
 
   const stats = [
@@ -75,11 +131,27 @@ export default function BooksPage() {
     { icon: Clock, label: 'Pendientes', value: books.filter(b => b.status === 'Por leer').length, color: 'bg-slate-500' },
   ];
 
+  const quillModules = {
+    toolbar: [
+      ['bold', 'italic', 'underline'],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      ['link', 'clean']
+    ],
+  };
+
   return (
     <div className="p-6 lg:p-10 space-y-8 max-w-7xl mx-auto">
-      <div>
-        <h2 className="text-3xl font-bold text-slate-800">Mi biblioteca</h2>
-        <p className="text-slate-400">Tu colección de lecturas</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-slate-800">Mi biblioteca</h2>
+          <p className="text-slate-400">Tu colección de lecturas</p>
+        </div>
+        <button 
+          onClick={() => setIsFolderModalOpen(true)}
+          className="p-2 bg-white border border-slate-100 rounded-xl shadow-sm text-slate-500 hover:text-indigo-600 transition-colors"
+        >
+          <Folder size={20} />
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -108,7 +180,7 @@ export default function BooksPage() {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-        {['Todos', 'Por leer', 'Leyendo', 'Completado'].map(f => (
+        {['Todos', 'Por leer', 'Leyendo', 'Completado', ...folders.map(f => f.name)].filter((v, i, a) => a.indexOf(v) === i).map(f => (
           <button 
             key={f}
             onClick={() => setFilter(f)}
@@ -123,7 +195,11 @@ export default function BooksPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredBooks.map(book => (
-          <div key={book.id} className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex gap-4 group cursor-pointer hover:border-indigo-200 transition-all">
+          <div 
+            key={book.id} 
+            onClick={() => { setCurrentBook(book); setIsEditorOpen(true); }}
+            className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex gap-4 group cursor-pointer hover:border-indigo-200 transition-all"
+          >
             <div className="w-24 h-32 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0">
               <Book size={40} />
             </div>
@@ -139,6 +215,11 @@ export default function BooksPage() {
                 <span className="px-3 py-1 bg-slate-50 text-slate-400 text-[10px] font-bold uppercase rounded-full border border-slate-100">
                   {book.status}
                 </span>
+                {book.folder && (
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase rounded-full border border-indigo-100">
+                    {book.folder}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -147,13 +228,43 @@ export default function BooksPage() {
 
       <button 
         onClick={() => {
-          setCurrentBook({ title: '', author: '', category: 'Otros', status: 'Por leer', pages_read: 0, total_pages: 0, start_date: '', notes: '', quotes: '' });
+          setCurrentBook({ title: '', author: '', category: 'Otros', status: 'Por leer', pages_read: 0, total_pages: 0, start_date: '', notes: '', quotes: '', folder: 'Biblioteca' });
           setIsEditorOpen(true);
         }}
         className="fixed bottom-20 right-6 lg:bottom-10 lg:right-10 w-16 h-16 bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-200 flex items-center justify-center hover:scale-110 transition-transform z-40"
       >
         <Plus size={32} />
       </button>
+
+      {/* Folder Modal */}
+      <AnimatePresence>
+        {isFolderModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setIsFolderModalOpen(false)}
+              className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[32px] p-8 w-full max-w-md relative z-10 shadow-2xl"
+            >
+              <h3 className="text-2xl font-bold text-slate-800 mb-6">Nueva Carpeta</h3>
+              <input 
+                type="text" 
+                placeholder="Nombre de la carpeta"
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 mb-6"
+              />
+              <div className="flex gap-4">
+                <button onClick={() => setIsFolderModalOpen(false)} className="flex-1 py-4 text-slate-400 font-bold">Cancelar</button>
+                <button onClick={handleCreateFolder} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100">Crear</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isEditorOpen && (
@@ -164,20 +275,23 @@ export default function BooksPage() {
             className="fixed inset-0 bg-white z-50 flex flex-col"
           >
             <div className="p-4 border-b flex items-center justify-between">
-              <button onClick={() => setIsEditorOpen(false)} className="p-2 text-slate-500"><X size={24} /></button>
+              <div className="flex items-center gap-4">
+                <button onClick={() => setIsEditorOpen(false)} className="p-2 text-slate-500"><X size={24} /></button>
+                {isSaving && <span className="text-xs text-slate-400 animate-pulse font-medium">Guardando...</span>}
+              </div>
               <div className="flex gap-2">
                 {currentBook?.id && (
                   <button onClick={() => handleDelete(currentBook.id!)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors">
                     <Trash2 size={20} />
                   </button>
                 )}
-                <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2">
+                <button onClick={() => handleSave(currentBook!)} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2">
                   <Save size={18} /> Guardar
                 </button>
               </div>
             </div>
             
-            <div className="flex-1 p-6 space-y-6 overflow-y-auto max-w-2xl mx-auto w-full">
+            <div className="flex-1 p-6 space-y-6 overflow-y-auto max-w-4xl mx-auto w-full">
               <div className="space-y-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-slate-400 uppercase">Título</label>
@@ -186,7 +300,7 @@ export default function BooksPage() {
                     placeholder="Nombre del libro"
                     value={currentBook?.title}
                     onChange={e => setCurrentBook(prev => prev ? ({ ...prev, title: e.target.value }) : null)}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none focus:border-indigo-400"
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none focus:border-indigo-400 text-xl font-bold"
                   />
                 </div>
                 <div className="space-y-1">
@@ -199,7 +313,7 @@ export default function BooksPage() {
                     className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none focus:border-indigo-400"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-400 uppercase">Estado</label>
                     <select 
@@ -225,12 +339,63 @@ export default function BooksPage() {
                       <option>Otros</option>
                     </select>
                   </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-400 uppercase">Carpeta</label>
+                    <select 
+                      value={currentBook?.folder}
+                      onChange={e => setCurrentBook(prev => prev ? ({ ...prev, folder: e.target.value }) : null)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none"
+                    >
+                      <option>Biblioteca</option>
+                      <option>Favoritos</option>
+                      <option>Deseados</option>
+                      {folders.map(f => <option key={f.id}>{f.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Notas y Resumen</label>
+                  <div className="quill-container bg-slate-50 border border-slate-100 rounded-xl overflow-hidden">
+                    <ReactQuill 
+                      theme="snow"
+                      value={currentBook?.notes || ''}
+                      onChange={notes => setCurrentBook(prev => prev ? ({ ...prev, notes }) : null)}
+                      modules={quillModules}
+                      placeholder="Escribe tus reflexiones sobre el libro..."
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Citas Favoritas</label>
+                  <div className="quill-container bg-slate-50 border border-slate-100 rounded-xl overflow-hidden">
+                    <ReactQuill 
+                      theme="snow"
+                      value={currentBook?.quotes || ''}
+                      onChange={quotes => setCurrentBook(prev => prev ? ({ ...prev, quotes }) : null)}
+                      modules={quillModules}
+                      placeholder="Guarda las mejores frases..."
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      <style>{`
+        .quill-container .ql-container {
+          border: none !important;
+          min-height: 200px;
+          font-size: 1rem;
+        }
+        .quill-container .ql-toolbar {
+          border: none !important;
+          border-bottom: 1px solid #f1f5f9 !important;
+        }
+      `}</style>
     </div>
   );
 }

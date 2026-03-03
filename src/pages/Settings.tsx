@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { X, Sparkles, Moon, Bell, ChevronRight, LogOut, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-export default function SettingsPage() {
+export default function SettingsPage({ darkMode, setDarkMode }: { darkMode: boolean, setDarkMode: (v: boolean) => void }) {
   const navigate = useNavigate();
-  const [darkMode, setDarkMode] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
 
   const handleLogout = () => {
     // In a real app, clear tokens here
@@ -14,7 +15,7 @@ export default function SettingsPage() {
   return (
     <div className="p-6 lg:p-10 space-y-8 max-w-3xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-xl">
+        <button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
           <X size={24} className="text-slate-500" />
         </button>
         <h2 className="text-2xl font-bold text-slate-800">Ajustes</h2>
@@ -22,7 +23,7 @@ export default function SettingsPage() {
 
       <div className="bg-white p-8 rounded-3xl border border-slate-100 card-shadow space-y-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold">
+          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-indigo-100">
             L
           </div>
           <div>
@@ -53,7 +54,12 @@ export default function SettingsPage() {
                 <p className="text-xs text-slate-400">Habla con tu cerebro desde WhatsApp</p>
               </div>
             </div>
-            <button className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-100">Configurar</button>
+            <button 
+              onClick={() => setShowWhatsAppModal(true)}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-colors"
+            >
+              Configurar
+            </button>
           </div>
           
           <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200 flex flex-col items-center gap-4 text-center">
@@ -88,6 +94,23 @@ export default function SettingsPage() {
               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${darkMode ? 'right-1' : 'left-1'}`}></div>
             </button>
           </div>
+          
+          <div className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400"><Bell size={20} /></div>
+              <div>
+                <p className="font-bold text-slate-700">Notificaciones Push</p>
+                <p className="text-xs text-slate-400">Recibe alertas en tiempo real</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setNotificationsEnabled(!notificationsEnabled)}
+              className={`w-12 h-6 rounded-full relative transition-colors ${notificationsEnabled ? 'bg-indigo-600' : 'bg-slate-200'}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${notificationsEnabled ? 'right-1' : 'left-1'}`}></div>
+            </button>
+          </div>
+
           <div 
             onClick={() => navigate('/reminders')}
             className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
@@ -95,8 +118,8 @@ export default function SettingsPage() {
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400"><Bell size={20} /></div>
               <div>
-                <p className="font-bold text-slate-700">Notificaciones</p>
-                <p className="text-xs text-slate-400">Gestiona las alertas</p>
+                <p className="font-bold text-slate-700">Gestionar Recordatorios</p>
+                <p className="text-xs text-slate-400">Configura tus alertas programadas</p>
               </div>
             </div>
             <ChevronRight size={20} className="text-slate-300" />
@@ -111,6 +134,30 @@ export default function SettingsPage() {
         <LogOut size={20} />
         Cerrar sesión
       </button>
+
+      {/* WhatsApp Modal Mockup */}
+      {showWhatsAppModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full space-y-6 shadow-2xl">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto">
+              <Phone size={32} />
+            </div>
+            <div className="text-center space-y-2">
+              <h3 className="text-2xl font-bold text-slate-800">WhatsApp Sync</h3>
+              <p className="text-slate-500">Para conectar tu cuenta, envía el código <span className="font-mono font-bold text-indigo-600">MINDFLOW-SYNC</span> al número oficial de MindFlow AI.</p>
+            </div>
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center">
+              <p className="text-sm font-bold text-slate-700">+34 600 000 000</p>
+            </div>
+            <button 
+              onClick={() => setShowWhatsAppModal(false)}
+              className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-colors"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,29 +1,62 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Calendar, MoreVertical, ChevronRight, X, Save, Trash2, Users, Gift } from 'lucide-react';
+import { Plus, Search, Calendar, MoreVertical, ChevronRight, X, Save, Trash2, Users, Gift, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-interface Birthday {
+interface BirthdayData {
   id?: number;
   name: string;
   date: string;
   category: string;
+  folder: string;
+}
+
+interface FolderData {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export default function BirthdaysPage() {
-  const [birthdays, setBirthdays] = useState<Birthday[]>([]);
+  const [birthdays, setBirthdays] = useState<BirthdayData[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [currentBirthday, setCurrentBirthday] = useState<Birthday | null>(null);
+  const [currentBirthday, setCurrentBirthday] = useState<BirthdayData | null>(null);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('Todos');
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
 
   useEffect(() => {
     fetchBirthdays();
+    fetchFolders();
   }, []);
 
   const fetchBirthdays = async () => {
     const res = await fetch('/api/birthdays');
     const data = await res.json();
     setBirthdays(data);
+  };
+
+  const fetchFolders = async () => {
+    const res = await fetch('/api/folders?type=birthdays');
+    const data = await res.json();
+    setFolders(data);
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName) return;
+    try {
+      await fetch('/api/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newFolderName, type: 'birthdays', color: '#6366f1' })
+      });
+      setNewFolderName('');
+      setIsFolderModalOpen(false);
+      fetchFolders();
+    } catch (error) {
+      console.error("Error creating folder:", error);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -59,7 +92,7 @@ export default function BirthdaysPage() {
 
   const filteredBirthdays = birthdays.filter(b => 
     (b.name.toLowerCase().includes(search.toLowerCase())) &&
-    (filter === 'Todos' || b.category === filter)
+    (filter === 'Todos' || b.category === filter || b.folder === filter)
   );
 
   return (
@@ -70,6 +103,12 @@ export default function BirthdaysPage() {
           <p className="text-slate-400">{birthdays.length} contactos guardados</p>
         </div>
         <div className="flex gap-2">
+          <button 
+            onClick={() => setIsFolderModalOpen(true)}
+            className="p-2 bg-white border border-slate-100 rounded-xl shadow-sm text-slate-500 hover:text-indigo-600 transition-colors"
+          >
+            <Folder size={20} />
+          </button>
           <button className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm"><Users size={20} /></button>
           <button className="p-2 bg-white border border-slate-100 rounded-xl shadow-sm text-slate-500"><Calendar size={20} /></button>
         </div>
@@ -87,7 +126,7 @@ export default function BirthdaysPage() {
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-        {['Todos', 'Familia', 'Amigos', 'Trabajo'].map(f => (
+        {['Todos', 'Familia', 'Amigos', 'Trabajo', ...folders.map(f => f.name)].filter((v, i, a) => a.indexOf(v) === i).map(f => (
           <button 
             key={f}
             onClick={() => setFilter(f)}
@@ -111,7 +150,7 @@ export default function BirthdaysPage() {
           </div>
           <button 
             onClick={() => {
-              setCurrentBirthday({ name: '', date: '', category: 'Familia' });
+              setCurrentBirthday({ name: '', date: '', category: 'Familia', folder: 'Contactos' });
               setIsEditorOpen(true);
             }}
             className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
@@ -131,7 +170,10 @@ export default function BirthdaysPage() {
               </div>
               <div className="flex-1 cursor-pointer" onClick={() => { setCurrentBirthday(b); setIsEditorOpen(true); }}>
                 <h4 className="font-bold text-slate-800">{b.name}</h4>
-                <p className="text-slate-400 text-sm">{b.date}</p>
+                <div className="flex gap-2">
+                  <p className="text-slate-400 text-sm">{b.date}</p>
+                  {b.folder && <p className="text-indigo-400 text-sm font-bold uppercase tracking-wider">· {b.folder}</p>}
+                </div>
               </div>
               <button 
                 onClick={() => handleDelete(b.id!)}
@@ -146,13 +188,43 @@ export default function BirthdaysPage() {
 
       <button 
         onClick={() => {
-          setCurrentBirthday({ name: '', date: '', category: 'Familia' });
+          setCurrentBirthday({ name: '', date: '', category: 'Familia', folder: 'Contactos' });
           setIsEditorOpen(true);
         }}
         className="fixed bottom-20 right-6 lg:bottom-10 lg:right-10 w-16 h-16 bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-200 flex items-center justify-center hover:scale-110 transition-transform z-40"
       >
         <Plus size={32} />
       </button>
+
+      {/* Folder Modal */}
+      <AnimatePresence>
+        {isFolderModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setIsFolderModalOpen(false)}
+              className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[32px] p-8 w-full max-w-md relative z-10 shadow-2xl"
+            >
+              <h3 className="text-2xl font-bold text-slate-800 mb-6">Nueva Carpeta</h3>
+              <input 
+                type="text" 
+                placeholder="Nombre de la carpeta"
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 mb-6"
+              />
+              <div className="flex gap-4">
+                <button onClick={() => setIsFolderModalOpen(false)} className="flex-1 py-4 text-slate-400 font-bold">Cancelar</button>
+                <button onClick={handleCreateFolder} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100">Crear</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isEditorOpen && (
@@ -208,6 +280,18 @@ export default function BirthdaysPage() {
                       <option>Trabajo</option>
                     </select>
                   </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Carpeta</label>
+                  <select 
+                    value={currentBirthday?.folder}
+                    onChange={e => setCurrentBirthday(prev => prev ? ({ ...prev, folder: e.target.value }) : null)}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none"
+                  >
+                    <option>Contactos</option>
+                    <option>VIP</option>
+                    {folders.map(f => <option key={f.id}>{f.name}</option>)}
+                  </select>
                 </div>
               </div>
 

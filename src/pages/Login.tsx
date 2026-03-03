@@ -6,8 +6,30 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  const handleGoogleLogin = async () => {
+    try {
+      const res = await fetch('/api/auth/google/url');
+      const { url } = await res.json();
+      
+      const popup = window.open(url, 'google_login', 'width=500,height=600');
+      
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'OAUTH_SUCCESS') {
+          localStorage.setItem('user', JSON.stringify(event.data.user));
+          onLogin();
+          window.removeEventListener('message', handleMessage);
+        }
+      };
+      
+      window.addEventListener('message', handleMessage);
+    } catch (error) {
+      console.error("Login Error:", error);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // For demo purposes, just log in
     onLogin();
   };
 
@@ -73,7 +95,10 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <button className="flex items-center justify-center gap-2 py-3 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all text-slate-600 font-bold text-sm">
+            <button 
+              onClick={handleGoogleLogin}
+              className="flex items-center justify-center gap-2 py-3 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all text-slate-600 font-bold text-sm"
+            >
               <Chrome size={18} /> Google
             </button>
             <button className="flex items-center justify-center gap-2 py-3 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all text-slate-600 font-bold text-sm">

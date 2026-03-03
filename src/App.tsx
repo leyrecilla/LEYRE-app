@@ -117,8 +117,65 @@ const Sidebar = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) 
   );
 };
 
-const Header = ({ onMenuOpen }: { onMenuOpen: () => void }) => {
+const Header = ({ onMenuOpen, darkMode, toggleDarkMode }: { onMenuOpen: () => void, darkMode: boolean, toggleDarkMode: () => void }) => {
   const navigate = useNavigate();
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch('/api/reminders');
+      const data = await res.json();
+      // Map reminders to notification format
+      const mapped = data.map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        message: `${r.date} a las ${r.time}`,
+        time: r.priority,
+        read: !!r.completed
+      }));
+      setNotifications(mapped);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const markAllAsRead = async () => {
+    try {
+      await Promise.all(notifications.filter(n => !n.read).map(n => 
+        fetch(`/api/reminders/${n.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ completed: 1 })
+        })
+      ));
+      fetchNotifications();
+    } catch (error) {
+      console.error("Error marking all as read:", error);
+    }
+  };
+
+  const markAsRead = async (id: number) => {
+    try {
+      await fetch(`/api/reminders/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: 1 })
+      });
+      fetchNotifications();
+    } catch (error) {
+      console.error("Error marking as read:", error);
+    }
+  };
+
   return (
     <header className="h-16 bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-30 px-4 lg:px-8 flex items-center justify-between">
       <div className="flex items-center gap-4">
@@ -142,7 +199,89 @@ const Header = ({ onMenuOpen }: { onMenuOpen: () => void }) => {
         >
           <Sparkles size={20} />
         </button>
-        <button className="p-2.5 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors">
+        
+        <div className="relative">
+          <button 
+            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+            className="p-2.5 text-slate-500 hover:bg-slate-50 rounded-xl transition-colors relative"
+          >
+            <Bell size={20} />
+            {unreadCount > 0 && (
+              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+            )}
+          </button>
+
+          <AnimatePresence>
+            {isNotificationsOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsNotificationsOpen(false)} />
+                <motion.div 
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute right-0 mt-2 w-80 bg-white rounded-2xl border border-slate-100 shadow-xl z-50 overflow-hidden"
+                >
+                  <div className="p-4 border-b border-slate-50 flex items-center justify-between">
+                    <h3 className="font-bold text-slate-800">Notificaciones</h3>
+                    {unreadCount > 0 && (
+                      <button 
+                        onClick={markAllAsRead}
+                        className="text-xs text-indigo-600 font-bold hover:underline"
+                      >
+                        Marcar todo como leído
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.length > 0 ? (
+                      notifications.map(n => (
+                        <div 
+                          key={n.id} 
+                          onClick={() => markAsRead(n.id)}
+                          className={cn("p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer", !n.read && "bg-indigo-50/30")}
+                        >
+                          <div className="flex justify-between items-start">
+                            <p className="text-sm font-bold text-slate-800">{n.title}</p>
+                            {!n.read && <div className="w-2 h-2 bg-indigo-600 rounded-full mt-1.5"></div>}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">{n.message}</p>
+                          <p className={cn(
+                            "text-[10px] mt-2 uppercase font-bold tracking-wider",
+                            n.time === 'Alta' ? "text-red-500" : "text-slate-400"
+                          )}>{n.time}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 text-center">
+                        <Bell className="mx-auto text-slate-200 mb-2" size={32} />
+                        <p className="text-sm text-slate-400">No tienes notificaciones</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3 bg-slate-50 text-center">
+                    <button 
+                      onClick={() => {
+                        setIsNotificationsOpen(false);
+                        navigate('/reminders');
+                      }}
+                      className="text-xs text-slate-500 font-bold hover:text-indigo-600"
+                    >
+                      Ver todos los recordatorios
+                    </button>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <button 
+          onClick={toggleDarkMode}
+          className={cn(
+            "p-2.5 rounded-xl transition-colors",
+            darkMode ? "bg-slate-800 text-yellow-400" : "text-slate-500 hover:bg-slate-50"
+          )}
+        >
           <Moon size={20} />
         </button>
         <button 
@@ -203,6 +342,15 @@ import LoginPage from './pages/Login';
 export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
 
   if (!isAuthenticated) {
     return <LoginPage onLogin={() => setIsAuthenticated(true)} />;
@@ -210,11 +358,15 @@ export default function App() {
 
   return (
     <Router>
-      <div className="flex min-h-screen bg-slate-50">
+      <div className={cn("flex min-h-screen transition-colors duration-300", darkMode ? "bg-slate-950" : "bg-slate-50")}>
         <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
         
         <div className="flex-1 flex flex-col min-w-0">
-          <Header onMenuOpen={() => setIsSidebarOpen(true)} />
+          <Header 
+            onMenuOpen={() => setIsSidebarOpen(true)} 
+            darkMode={darkMode} 
+            toggleDarkMode={() => setDarkMode(!darkMode)} 
+          />
           
           <main className="flex-1 pb-20 lg:pb-8 overflow-x-hidden">
             <Routes>
@@ -228,7 +380,7 @@ export default function App() {
               <Route path="/lists" element={<ListsPage />} />
               <Route path="/reminders" element={<RemindersPage />} />
               <Route path="/ai" element={<AIChat />} />
-              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/settings" element={<SettingsPage darkMode={darkMode} setDarkMode={setDarkMode} />} />
               <Route path="*" element={<Dashboard />} />
             </Routes>
           </main>

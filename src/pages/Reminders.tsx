@@ -1,24 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Bell, MoreVertical, Calendar, Clock, ChevronRight, X, Save, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Search, Bell, MoreVertical, Calendar, Clock, ChevronRight, X, Save, Trash2, AlertCircle, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-interface Reminder {
+interface ReminderData {
   id?: number;
   title: string;
   date: string;
   time: string;
   priority: string;
   completed: boolean | number;
+  folder: string;
+}
+
+interface FolderData {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export default function RemindersPage() {
-  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [reminders, setReminders] = useState<ReminderData[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentReminder, setCurrentReminder] = useState<Reminder | null>(null);
+  const [currentReminder, setCurrentReminder] = useState<ReminderData | null>(null);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [filter, setFilter] = useState('Todos');
 
   useEffect(() => {
     fetchReminders();
+    fetchFolders();
   }, []);
 
   const fetchReminders = async () => {
@@ -28,6 +40,28 @@ export default function RemindersPage() {
       setReminders(data);
     } catch (error) {
       console.error("Error fetching reminders:", error);
+    }
+  };
+
+  const fetchFolders = async () => {
+    const res = await fetch('/api/folders?type=reminders');
+    const data = await res.json();
+    setFolders(data);
+  };
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName) return;
+    try {
+      await fetch('/api/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newFolderName, type: 'reminders', color: '#6366f1' })
+      });
+      setNewFolderName('');
+      setIsFolderModalOpen(false);
+      fetchFolders();
+    } catch (error) {
+      console.error("Error creating folder:", error);
     }
   };
 
@@ -57,7 +91,7 @@ export default function RemindersPage() {
     }
   };
 
-  const toggleComplete = async (reminder: Reminder) => {
+  const toggleComplete = async (reminder: ReminderData) => {
     const updated = { ...reminder, completed: !reminder.completed ? 1 : 0 };
     try {
       await fetch(`/api/reminders/${reminder.id}`, {
@@ -82,7 +116,8 @@ export default function RemindersPage() {
   };
 
   const filteredReminders = reminders.filter(r => 
-    r.title.toLowerCase().includes(search.toLowerCase())
+    r.title.toLowerCase().includes(search.toLowerCase()) &&
+    (filter === 'Todos' || r.folder === filter)
   );
 
   return (
@@ -92,15 +127,23 @@ export default function RemindersPage() {
           <h2 className="text-3xl font-bold text-slate-800">Recordatorios</h2>
           <p className="text-slate-400">Tus alertas y notificaciones</p>
         </div>
-        <button 
-          onClick={() => {
-            setCurrentReminder({ title: '', date: new Date().toISOString().split('T')[0], time: '12:00', priority: 'Media', completed: 0 });
-            setIsModalOpen(true);
-          }}
-          className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100 flex items-center gap-2 font-bold"
-        >
-          <Plus size={20} /> Nuevo
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setIsFolderModalOpen(true)}
+            className="p-3 bg-white border border-slate-100 rounded-2xl shadow-sm text-slate-500 hover:text-indigo-600 transition-colors"
+          >
+            <Folder size={20} />
+          </button>
+          <button 
+            onClick={() => {
+              setCurrentReminder({ title: '', date: new Date().toISOString().split('T')[0], time: '12:00', priority: 'Media', completed: 0, folder: 'General' });
+              setIsModalOpen(true);
+            }}
+            className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100 flex items-center gap-2 font-bold"
+          >
+            <Plus size={20} /> Nuevo
+          </button>
+        </div>
       </div>
 
       <div className="relative">
@@ -112,6 +155,20 @@ export default function RemindersPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-full bg-white border border-slate-100 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-indigo-400 transition-all card-shadow"
         />
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+        {['Todos', ...folders.map(f => f.name)].filter((v, i, a) => a.indexOf(v) === i).map(f => (
+          <button 
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-6 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+              filter === f ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-100'
+            }`}
+          >
+            {f}
+          </button>
+        ))}
       </div>
 
       <div className="space-y-4">
@@ -147,6 +204,11 @@ export default function RemindersPage() {
                 )}>
                   {reminder.priority}
                 </span>
+                {reminder.folder && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-50 text-indigo-600">
+                    {reminder.folder}
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
@@ -160,6 +222,36 @@ export default function RemindersPage() {
           </div>
         ))}
       </div>
+
+      {/* Folder Modal */}
+      <AnimatePresence>
+        {isFolderModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setIsFolderModalOpen(false)}
+              className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[32px] p-8 w-full max-w-md relative z-10 shadow-2xl"
+            >
+              <h3 className="text-2xl font-bold text-slate-800 mb-6">Nueva Carpeta</h3>
+              <input 
+                type="text" 
+                placeholder="Nombre de la carpeta"
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 mb-6"
+              />
+              <div className="flex gap-4">
+                <button onClick={() => setIsFolderModalOpen(false)} className="flex-1 py-4 text-slate-400 font-bold">Cancelar</button>
+                <button onClick={handleCreateFolder} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100">Crear</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isModalOpen && (
@@ -208,24 +300,31 @@ export default function RemindersPage() {
                     />
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Prioridad</label>
-                  <div className="flex gap-2">
-                    {['Baja', 'Media', 'Alta'].map(p => (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => setCurrentReminder(prev => prev ? ({ ...prev, priority: p }) : null)}
-                        className={cn(
-                          "flex-1 py-3 rounded-xl text-xs font-bold transition-all border",
-                          currentReminder?.priority === p 
-                            ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100" 
-                            : "bg-white text-slate-400 border-slate-100 hover:bg-slate-50"
-                        )}
-                      >
-                        {p}
-                      </button>
-                    ))}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Prioridad</label>
+                    <select 
+                      value={currentReminder?.priority}
+                      onChange={e => setCurrentReminder(prev => prev ? ({ ...prev, priority: e.target.value }) : null)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none"
+                    >
+                      <option>Baja</option>
+                      <option>Media</option>
+                      <option>Alta</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Carpeta</label>
+                    <select 
+                      value={currentReminder?.folder}
+                      onChange={e => setCurrentReminder(prev => prev ? ({ ...prev, folder: e.target.value }) : null)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 outline-none"
+                    >
+                      <option>General</option>
+                      <option>Personal</option>
+                      <option>Trabajo</option>
+                      {folders.map(f => <option key={f.id}>{f.name}</option>)}
+                    </select>
                   </div>
                 </div>
                 <button 

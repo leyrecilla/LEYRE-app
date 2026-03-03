@@ -1,22 +1,39 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, List as ListIcon, MoreVertical, ChevronRight, X, Save, Trash2, CheckCircle, Circle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Search, List as ListIcon, MoreVertical, ChevronRight, X, Save, Trash2, CheckCircle, Circle, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
 
-interface List {
+interface ListData {
   id?: number;
   title: string;
   items: string; // Stored as string in DB
   category: string;
+  folder: string;
+}
+
+interface FolderData {
+  id: number;
+  name: string;
+  color: string;
 }
 
 export default function ListsPage() {
-  const [lists, setLists] = useState<List[]>([]);
+  const [lists, setLists] = useState<ListData[]>([]);
+  const [folders, setFolders] = useState<FolderData[]>([]);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentList, setCurrentList] = useState<List | null>(null);
+  const [currentList, setCurrentList] = useState<ListData | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [filter, setFilter] = useState('Todas');
+
+  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchLists();
+    fetchFolders();
   }, []);
 
   const fetchLists = async () => {
@@ -29,30 +46,71 @@ export default function ListsPage() {
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentList) return;
+  const fetchFolders = async () => {
+    const res = await fetch('/api/folders?type=lists');
+    const data = await res.json();
+    setFolders(data);
+  };
 
-    const method = currentList.id ? 'PUT' : 'POST';
-    const url = currentList.id ? `/api/lists/${currentList.id}` : '/api/lists';
-
+  const handleCreateFolder = async () => {
+    if (!newFolderName) return;
     try {
-      await fetch(url, {
-        method,
+      await fetch('/api/folders', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentList)
+        body: JSON.stringify({ name: newFolderName, type: 'lists', color: '#6366f1' })
       });
-      setIsModalOpen(false);
-      fetchLists();
+      setNewFolderName('');
+      setIsFolderModalOpen(false);
+      fetchFolders();
     } catch (error) {
-      console.error("Error saving list:", error);
+      console.error("Error creating folder:", error);
     }
   };
+
+  const handleSave = async (listToSave: ListData) => {
+    if (!listToSave) return;
+    setIsSaving(true);
+
+    const method = listToSave.id ? 'PUT' : 'POST';
+    const url = listToSave.id ? `/api/lists/${listToSave.id}` : '/api/lists';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(listToSave)
+      });
+      const savedList = await res.json();
+      if (!listToSave.id) {
+        setCurrentList(savedList);
+      }
+      fetchLists();
+      setTimeout(() => setIsSaving(false), 1000);
+    } catch (error) {
+      console.error("Error saving list:", error);
+      setIsSaving(false);
+    }
+  };
+
+  // Auto-save logic
+  useEffect(() => {
+    if (isModalOpen && currentList) {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => {
+        handleSave(currentList);
+      }, 2000);
+    }
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [currentList?.title, currentList?.items, currentList?.category, currentList?.folder]);
 
   const handleDelete = async (id: number) => {
     if (!confirm('¿Estás seguro de que quieres eliminar esta lista?')) return;
     try {
       await fetch(`/api/lists/${id}`, { method: 'DELETE' });
+      setIsModalOpen(false);
       fetchLists();
     } catch (error) {
       console.error("Error deleting list:", error);
@@ -60,8 +118,17 @@ export default function ListsPage() {
   };
 
   const filteredLists = lists.filter(l => 
-    l.title.toLowerCase().includes(search.toLowerCase())
+    l.title.toLowerCase().includes(search.toLowerCase()) &&
+    (filter === 'Todas' || l.folder === filter)
   );
+
+  const quillModules = {
+    toolbar: [
+      ['bold', 'italic'],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+      ['clean']
+    ],
+  };
 
   return (
     <div className="p-6 lg:p-10 space-y-8 max-w-7xl mx-auto">
@@ -70,15 +137,23 @@ export default function ListsPage() {
           <h2 className="text-3xl font-bold text-slate-800">Mis Listas</h2>
           <p className="text-slate-400">Organiza tus cosas por categorías</p>
         </div>
-        <button 
-          onClick={() => {
-            setCurrentList({ title: '', items: '', category: 'General' });
-            setIsModalOpen(true);
-          }}
-          className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100 flex items-center gap-2 font-bold"
-        >
-          <Plus size={20} /> Nueva Lista
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setIsFolderModalOpen(true)}
+            className="p-3 bg-white border border-slate-100 rounded-2xl shadow-sm text-slate-500 hover:text-indigo-600 transition-colors"
+          >
+            <Folder size={20} />
+          </button>
+          <button 
+            onClick={() => {
+              setCurrentList({ title: '', items: '', category: 'General', folder: 'Mis Listas' });
+              setIsModalOpen(true);
+            }}
+            className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100 flex items-center gap-2 font-bold"
+          >
+            <Plus size={20} /> Nueva Lista
+          </button>
+        </div>
       </div>
 
       <div className="relative">
@@ -92,6 +167,20 @@ export default function ListsPage() {
         />
       </div>
 
+      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+        {['Todas', ...folders.map(f => f.name)].filter((v, i, a) => a.indexOf(v) === i).map(f => (
+          <button 
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-6 py-2 rounded-xl font-medium transition-all whitespace-nowrap ${
+              filter === f ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-100'
+            }`}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredLists.length === 0 && (
           <div className="col-span-full text-center py-20 bg-white rounded-[40px] border border-dashed border-slate-200">
@@ -100,7 +189,6 @@ export default function ListsPage() {
           </div>
         )}
         {filteredLists.map(list => {
-          const itemsArray = list.items ? list.items.split('\n').filter(i => i.trim()) : [];
           return (
             <div key={list.id} className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow space-y-4 group hover:border-indigo-200 transition-all">
               <div className="flex justify-between items-start">
@@ -124,26 +212,49 @@ export default function ListsPage() {
               </div>
               <div className="cursor-pointer" onClick={() => { setCurrentList(list); setIsModalOpen(true); }}>
                 <h4 className="font-bold text-slate-800 text-lg">{list.title}</h4>
-                <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mt-1">{list.category}</p>
+                <div className="flex gap-2 mt-1">
+                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">{list.category}</p>
+                  {list.folder && <p className="text-indigo-400 text-[10px] font-bold uppercase tracking-wider">· {list.folder}</p>}
+                </div>
               </div>
-              <div className="space-y-2">
-                {itemsArray.slice(0, 3).map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm text-slate-500">
-                    <Circle size={12} className="text-slate-300" />
-                    <span>{item}</span>
-                  </div>
-                ))}
-                {itemsArray.length > 3 && (
-                  <p className="text-xs text-slate-300 font-medium">+{itemsArray.length - 3} elementos más</p>
-                )}
-                {itemsArray.length === 0 && (
-                  <p className="text-xs text-slate-300 italic">Lista vacía</p>
-                )}
-              </div>
+              <div 
+                className="text-sm text-slate-500 line-clamp-4 overflow-hidden"
+                dangerouslySetInnerHTML={{ __html: list.items }}
+              />
             </div>
           );
         })}
       </div>
+
+      {/* Folder Modal */}
+      <AnimatePresence>
+        {isFolderModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setIsFolderModalOpen(false)}
+              className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[32px] p-8 w-full max-w-md relative z-10 shadow-2xl"
+            >
+              <h3 className="text-2xl font-bold text-slate-800 mb-6">Nueva Carpeta</h3>
+              <input 
+                type="text" 
+                placeholder="Nombre de la carpeta"
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 mb-6"
+              />
+              <div className="flex gap-4">
+                <button onClick={() => setIsFolderModalOpen(false)} className="flex-1 py-4 text-slate-400 font-bold">Cancelar</button>
+                <button onClick={handleCreateFolder} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100">Crear</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isModalOpen && (
@@ -152,13 +263,16 @@ export default function ListsPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden"
+              className="bg-white w-full max-w-2xl rounded-[40px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
               <div className="p-6 border-b border-slate-50 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-slate-800">{currentList?.id ? 'Editar' : 'Nueva'} Lista</h3>
+                <div className="flex items-center gap-4">
+                  <h3 className="text-xl font-bold text-slate-800">{currentList?.id ? 'Editar' : 'Nueva'} Lista</h3>
+                  {isSaving && <span className="text-xs text-slate-400 animate-pulse font-medium">Guardando...</span>}
+                </div>
                 <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={24} /></button>
               </div>
-              <form onSubmit={handleSave} className="p-8 space-y-6">
+              <div className="p-8 space-y-6 overflow-y-auto">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Título de la lista</label>
                   <input 
@@ -170,37 +284,65 @@ export default function ListsPage() {
                     placeholder="Ej: Compra Semanal"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Categoría</label>
-                  <input 
-                    type="text" 
-                    value={currentList?.category}
-                    onChange={e => setCurrentList(prev => prev ? ({ ...prev, category: e.target.value }) : null)}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 transition-all text-sm font-bold text-slate-800"
-                    placeholder="Ej: Hogar"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Categoría</label>
+                    <input 
+                      type="text" 
+                      value={currentList?.category}
+                      onChange={e => setCurrentList(prev => prev ? ({ ...prev, category: e.target.value }) : null)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 transition-all text-sm font-bold text-slate-800"
+                      placeholder="Ej: Hogar"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Carpeta</label>
+                    <select 
+                      value={currentList?.folder}
+                      onChange={e => setCurrentList(prev => prev ? ({ ...prev, folder: e.target.value }) : null)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 transition-all text-sm font-bold text-slate-800"
+                    >
+                      <option>Mis Listas</option>
+                      <option>Trabajo</option>
+                      {folders.map(f => <option key={f.id}>{f.name}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Elementos (uno por línea)</label>
-                  <textarea 
-                    rows={5}
-                    value={currentList?.items}
-                    onChange={e => setCurrentList(prev => prev ? ({ ...prev, items: e.target.value }) : null)}
-                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 transition-all text-sm font-medium text-slate-800 resize-none"
-                    placeholder="Leche&#10;Huevos&#10;Pan"
-                  />
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Elementos de la lista</label>
+                  <div className="quill-container bg-slate-50 border border-slate-100 rounded-2xl overflow-hidden">
+                    <ReactQuill 
+                      theme="snow"
+                      value={currentList?.items || ''}
+                      onChange={items => setCurrentList(prev => prev ? ({ ...prev, items }) : null)}
+                      modules={quillModules}
+                      placeholder="Añade elementos..."
+                    />
+                  </div>
                 </div>
                 <button 
-                  type="submit"
+                  onClick={() => handleSave(currentList!)}
                   className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
                 >
                   <Save size={20} /> Guardar Lista
                 </button>
-              </form>
+              </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      <style>{`
+        .quill-container .ql-container {
+          border: none !important;
+          min-height: 200px;
+          font-size: 1rem;
+        }
+        .quill-container .ql-toolbar {
+          border: none !important;
+          border-bottom: 1px solid #f1f5f9 !important;
+        }
+      `}</style>
     </div>
   );
 }
