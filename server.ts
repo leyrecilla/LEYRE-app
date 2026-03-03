@@ -233,6 +233,87 @@ async function startServer() {
     }
   });
 
+  app.get("/api/auth/github/url", (req, res) => {
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    if (!clientId) return res.status(500).json({ error: "GitHub Client ID not configured" });
+    
+    const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/github/callback`;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      scope: 'user:email',
+    });
+    
+    res.json({ url: `https://github.com/login/oauth/authorize?${params.toString()}` });
+  });
+
+  app.get("/api/auth/github/callback", async (req, res) => {
+    const { code } = req.query;
+    if (!code) return res.status(400).send("No code provided");
+
+    try {
+      const clientId = process.env.GITHUB_CLIENT_ID;
+      const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+      const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code: code
+        })
+      });
+
+      const tokens = await tokenRes.json();
+      if (tokens.error) throw new Error(tokens.error_description);
+
+      const userRes = await fetch('https://api.github.com/user', {
+        headers: { Authorization: `Bearer ${tokens.access_token}` }
+      });
+      const userData = await userRes.json();
+
+      // GitHub might not return email in /user if it's private, so fetch emails
+      let email = userData.email;
+      if (!email) {
+        const emailsRes = await fetch('https://api.github.com/user/emails', {
+          headers: { Authorization: `Bearer ${tokens.access_token}` }
+        });
+        const emails = await emailsRes.json();
+        const primaryEmail = emails.find((e: any) => e.primary) || emails[0];
+        email = primaryEmail.email;
+      }
+
+      // Upsert user
+      let user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+      if (!user) {
+        const result = db.prepare("INSERT INTO users (email, name, avatar) VALUES (?, ?, ?)").run(
+          email,
+          userData.name || userData.login,
+          userData.avatar_url
+        );
+        user = { id: result.lastInsertRowid, email, name: userData.name || userData.login, avatar: userData.avatar_url };
+      }
+
+      res.send(`
+        <html>
+          <body>
+            <script>
+              window.opener.postMessage({ type: 'OAUTH_SUCCESS', user: ${JSON.stringify(user)} }, '*');
+              window.close();
+            </script>
+          </body>
+        </html>
+      `);
+    } catch (error) {
+      console.error("GitHub OAuth Error:", error);
+      res.status(500).send("Authentication failed");
+    }
+  });
+
   // Generic CRUD helper - GET
   app.get("/api/:table", (req, res) => {
     try {

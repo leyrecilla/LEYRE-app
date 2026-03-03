@@ -99,7 +99,7 @@ export default function LearningPage() {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
         handleSave(currentResource);
-      }, 2000);
+      }, 30000);
     }
     return () => {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);

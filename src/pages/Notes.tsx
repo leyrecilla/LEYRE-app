@@ -97,7 +97,7 @@ export default function NotesPage() {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
         handleSave(currentNote);
-      }, 2000);
+      }, 30000);
     }
     return () => {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);

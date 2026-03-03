@@ -101,7 +101,7 @@ export default function BooksPage() {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
         handleSave(currentBook);
-      }, 2000);
+      }, 30000);
     }
     return () => {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);

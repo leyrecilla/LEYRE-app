@@ -27,6 +27,27 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
     }
   };
 
+  const handleGithubLogin = async () => {
+    try {
+      const res = await fetch('/api/auth/github/url');
+      const { url } = await res.json();
+      
+      const popup = window.open(url, 'github_login', 'width=500,height=600');
+      
+      const handleMessage = (event: MessageEvent) => {
+        if (event.data?.type === 'OAUTH_SUCCESS') {
+          localStorage.setItem('user', JSON.stringify(event.data.user));
+          onLogin();
+          window.removeEventListener('message', handleMessage);
+        }
+      };
+      
+      window.addEventListener('message', handleMessage);
+    } catch (error) {
+      console.error("GitHub Login Error:", error);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // For demo purposes, just log in
@@ -101,7 +122,10 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
             >
               <Chrome size={18} /> Google
             </button>
-            <button className="flex items-center justify-center gap-2 py-3 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all text-slate-600 font-bold text-sm">
+            <button 
+              onClick={handleGithubLogin}
+              className="flex items-center justify-center gap-2 py-3 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all text-slate-600 font-bold text-sm"
+            >
               <Github size={18} /> GitHub
             </button>
           </div>

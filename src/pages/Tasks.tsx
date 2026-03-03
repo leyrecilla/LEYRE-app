@@ -99,7 +99,7 @@ export default function TasksPage() {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
         handleSave(currentTask);
-      }, 2000);
+      }, 30000);
     }
     return () => {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
