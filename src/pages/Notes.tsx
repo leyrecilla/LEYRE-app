@@ -36,16 +36,28 @@ export default function NotesPage() {
     const method = currentNote.id ? 'PUT' : 'POST';
     const url = currentNote.id ? `/api/notes/${currentNote.id}` : '/api/notes';
     
-    // For simplicity in this demo, we'll use the generic POST for both if needed, 
-    // but the server helper handles POST for now. I'll adjust the server if needed.
-    await fetch('/api/notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(currentNote)
-    });
+    try {
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentNote)
+      });
+      setIsEditorOpen(false);
+      fetchNotes();
+    } catch (error) {
+      console.error("Error saving note:", error);
+    }
+  };
 
-    setIsEditorOpen(false);
-    fetchNotes();
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
+    try {
+      await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+      setIsEditorOpen(false);
+      fetchNotes();
+    } catch (error) {
+      console.error("Error deleting note:", error);
+    }
   };
 
   const filteredNotes = notes.filter(n => 
@@ -157,6 +169,11 @@ export default function NotesPage() {
             <div className="p-4 border-b flex items-center justify-between">
               <button onClick={() => setIsEditorOpen(false)} className="p-2 text-slate-500"><X size={24} /></button>
               <div className="flex gap-2">
+                {currentNote?.id && (
+                  <button onClick={() => handleDelete(currentNote.id!)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors">
+                    <Trash2 size={20} />
+                  </button>
+                )}
                 <button className="p-2 text-slate-400"><Bell size={20} /></button>
                 <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2">
                   <Save size={18} /> Guardar

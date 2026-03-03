@@ -1,16 +1,53 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileText, CheckSquare, GraduationCap, Plus, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
 export default function Dashboard() {
-  const stats = [
-    { icon: FileText, label: 'Notas', value: '0', color: 'bg-orange-500' },
-    { icon: CheckSquare, label: 'Pendientes', value: '0', color: 'bg-emerald-500' },
-    { icon: GraduationCap, label: 'Aprendiendo', value: '6', color: 'bg-blue-500' },
-  ];
+  const navigate = useNavigate();
+  const [stats, setStats] = useState([
+    { icon: FileText, label: 'Notas', value: '0', color: 'bg-orange-500', path: '/notes' },
+    { icon: CheckSquare, label: 'Pendientes', value: '0', color: 'bg-emerald-500', path: '/tasks' },
+    { icon: GraduationCap, label: 'Aprendiendo', value: '0', color: 'bg-blue-500', path: '/learning' },
+  ]);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [totalTasks, setTotalTasks] = useState(0);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [notesRes, tasksRes, learningRes] = await Promise.all([
+          fetch('/api/notes'),
+          fetch('/api/tasks'),
+          fetch('/api/learning')
+        ]);
+        
+        const notes = await notesRes.json();
+        const tasks = await tasksRes.json();
+        const learning = await learningRes.json();
+
+        const pendingTasks = tasks.filter((t: any) => !t.completed).length;
+        const completedTasks = tasks.filter((t: any) => t.completed).length;
+
+        setStats([
+          { icon: FileText, label: 'Notas', value: notes.length.toString(), color: 'bg-orange-500', path: '/notes' },
+          { icon: CheckSquare, label: 'Pendientes', value: pendingTasks.toString(), color: 'bg-emerald-500', path: '/tasks' },
+          { icon: GraduationCap, label: 'Aprendiendo', value: learning.length.toString(), color: 'bg-blue-500', path: '/learning' },
+        ]);
+
+        setCompletedCount(completedTasks);
+        setTotalTasks(tasks.length);
+      } catch (error) {
+        console.error("Error fetching stats:", error);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const progress = totalTasks > 0 ? (completedCount / totalTasks) * 100 : 0;
 
   return (
     <div className="p-6 lg:p-10 space-y-8 max-w-7xl mx-auto">
@@ -29,7 +66,11 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-3 gap-4 lg:gap-8">
         {stats.map((stat) => (
-          <div key={stat.label} className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex flex-col items-center text-center gap-3">
+          <div 
+            key={stat.label} 
+            onClick={() => navigate(stat.path)}
+            className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex flex-col items-center text-center gap-3 cursor-pointer hover:bg-slate-50 transition-colors"
+          >
             <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg", stat.color)}>
               <stat.icon size={24} />
             </div>
@@ -49,19 +90,22 @@ export default function Dashboard() {
             </div>
             <div>
               <h3 className="font-bold text-slate-800">Progreso de Hoy</h3>
-              <p className="text-xs text-slate-400">martes, 3 de marzo</p>
+              <p className="text-xs text-slate-400">{new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
             </div>
           </div>
-          <span className="text-slate-800 font-bold">0</span>
+          <span className="text-slate-800 font-bold">{completedCount}</span>
         </div>
         <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div className="h-full bg-indigo-600 w-0 transition-all duration-1000"></div>
+          <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${progress}%` }}></div>
         </div>
-        <p className="text-xs text-slate-400 text-center">Tareas completadas</p>
+        <p className="text-xs text-slate-400 text-center">{completedCount} de {totalTasks} tareas completadas</p>
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors">
+        <div 
+          onClick={() => navigate('/notes')}
+          className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors"
+        >
           <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center">
             <Plus size={24} />
           </div>
@@ -70,7 +114,10 @@ export default function Dashboard() {
             <p className="text-sm text-slate-400">Captura tus ideas</p>
           </div>
         </div>
-        <div className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors">
+        <div 
+          onClick={() => navigate('/learning')}
+          className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors"
+        >
           <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center">
             <GraduationCap size={24} />
           </div>

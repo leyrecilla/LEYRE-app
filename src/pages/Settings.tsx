@@ -1,11 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, Sparkles, Moon, Bell, ChevronRight, LogOut, Phone } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
+  const [darkMode, setDarkMode] = useState(false);
+
+  const handleLogout = () => {
+    // In a real app, clear tokens here
+    window.location.href = '/';
+  };
+
   return (
     <div className="p-6 lg:p-10 space-y-8 max-w-3xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => window.history.back()} className="p-2 hover:bg-slate-100 rounded-xl">
+        <button onClick={() => navigate(-1)} className="p-2 hover:bg-slate-100 rounded-xl">
           <X size={24} className="text-slate-500" />
         </button>
         <h2 className="text-2xl font-bold text-slate-800">Ajustes</h2>
@@ -72,11 +81,17 @@ export default function SettingsPage() {
                 <p className="text-xs text-slate-400">Activa el tema oscuro</p>
               </div>
             </div>
-            <div className="w-12 h-6 bg-slate-200 rounded-full relative cursor-pointer">
-              <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
-            </div>
+            <button 
+              onClick={() => setDarkMode(!darkMode)}
+              className={`w-12 h-6 rounded-full relative transition-colors ${darkMode ? 'bg-indigo-600' : 'bg-slate-200'}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${darkMode ? 'right-1' : 'left-1'}`}></div>
+            </button>
           </div>
-          <div className="p-4 flex items-center justify-between">
+          <div 
+            onClick={() => navigate('/reminders')}
+            className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
+          >
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400"><Bell size={20} /></div>
               <div>
@@ -89,7 +104,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <button className="w-full bg-white p-4 rounded-2xl border border-slate-100 text-red-500 font-bold flex items-center justify-center gap-2 hover:bg-red-50 transition-colors">
+      <button 
+        onClick={handleLogout}
+        className="w-full bg-white p-4 rounded-2xl border border-slate-100 text-red-500 font-bold flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+      >
         <LogOut size={20} />
         Cerrar sesión
       </button>

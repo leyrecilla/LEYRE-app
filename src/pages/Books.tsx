@@ -35,13 +35,32 @@ export default function BooksPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentBook) return;
-    await fetch('/api/books', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(currentBook)
-    });
-    setIsEditorOpen(false);
-    fetchBooks();
+
+    const method = currentBook.id ? 'PUT' : 'POST';
+    const url = currentBook.id ? `/api/books/${currentBook.id}` : '/api/books';
+
+    try {
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentBook)
+      });
+      setIsEditorOpen(false);
+      fetchBooks();
+    } catch (error) {
+      console.error("Error saving book:", error);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este libro?')) return;
+    try {
+      await fetch(`/api/books/${id}`, { method: 'DELETE' });
+      setIsEditorOpen(false);
+      fetchBooks();
+    } catch (error) {
+      console.error("Error deleting book:", error);
+    }
   };
 
   const filteredBooks = books.filter(b => 
@@ -146,9 +165,16 @@ export default function BooksPage() {
           >
             <div className="p-4 border-b flex items-center justify-between">
               <button onClick={() => setIsEditorOpen(false)} className="p-2 text-slate-500"><X size={24} /></button>
-              <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2">
-                <Save size={18} /> Guardar
-              </button>
+              <div className="flex gap-2">
+                {currentBook?.id && (
+                  <button onClick={() => handleDelete(currentBook.id!)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors">
+                    <Trash2 size={20} />
+                  </button>
+                )}
+                <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2">
+                  <Save size={18} /> Guardar
+                </button>
+              </div>
             </div>
             
             <div className="flex-1 p-6 space-y-6 overflow-y-auto max-w-2xl mx-auto w-full">

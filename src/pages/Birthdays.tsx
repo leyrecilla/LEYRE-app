@@ -29,13 +29,32 @@ export default function BirthdaysPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentBirthday) return;
-    await fetch('/api/birthdays', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(currentBirthday)
-    });
-    setIsEditorOpen(false);
-    fetchBirthdays();
+
+    const method = currentBirthday.id ? 'PUT' : 'POST';
+    const url = currentBirthday.id ? `/api/birthdays/${currentBirthday.id}` : '/api/birthdays';
+
+    try {
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentBirthday)
+      });
+      setIsEditorOpen(false);
+      fetchBirthdays();
+    } catch (error) {
+      console.error("Error saving birthday:", error);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este contacto?')) return;
+    try {
+      await fetch(`/api/birthdays/${id}`, { method: 'DELETE' });
+      setIsEditorOpen(false);
+      fetchBirthdays();
+    } catch (error) {
+      console.error("Error deleting birthday:", error);
+    }
   };
 
   const filteredBirthdays = birthdays.filter(b => 
@@ -103,15 +122,23 @@ export default function BirthdaysPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredBirthdays.map(b => (
-            <div key={b.id} className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex items-center gap-4 group cursor-pointer hover:border-indigo-200 transition-all">
-              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center font-bold text-xl">
+            <div key={b.id} className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex items-center gap-4 group hover:border-indigo-200 transition-all">
+              <div 
+                onClick={() => { setCurrentBirthday(b); setIsEditorOpen(true); }}
+                className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center font-bold text-xl cursor-pointer"
+              >
                 {b.name.charAt(0)}
               </div>
-              <div className="flex-1">
+              <div className="flex-1 cursor-pointer" onClick={() => { setCurrentBirthday(b); setIsEditorOpen(true); }}>
                 <h4 className="font-bold text-slate-800">{b.name}</h4>
                 <p className="text-slate-400 text-sm">{b.date}</p>
               </div>
-              <button className="p-2 text-slate-300 group-hover:text-slate-500"><MoreVertical size={20} /></button>
+              <button 
+                onClick={() => handleDelete(b.id!)}
+                className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={20} />
+              </button>
             </div>
           ))}
         </div>
@@ -137,8 +164,15 @@ export default function BirthdaysPage() {
               className="bg-white w-full max-w-lg rounded-t-3xl lg:rounded-3xl p-8 space-y-6"
             >
               <div className="flex justify-between items-center">
-                <h3 className="text-2xl font-bold text-slate-800">Añadir Cumpleaños</h3>
-                <button onClick={() => setIsEditorOpen(false)} className="p-2 text-slate-400"><X size={24} /></button>
+                <h3 className="text-2xl font-bold text-slate-800">{currentBirthday?.id ? 'Editar Cumpleaños' : 'Añadir Cumpleaños'}</h3>
+                <div className="flex gap-2">
+                  {currentBirthday?.id && (
+                    <button onClick={() => handleDelete(currentBirthday.id!)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors">
+                      <Trash2 size={20} />
+                    </button>
+                  )}
+                  <button onClick={() => setIsEditorOpen(false)} className="p-2 text-slate-400"><X size={24} /></button>
+                </div>
               </div>
 
               <div className="space-y-4">

@@ -8,16 +8,78 @@ interface Reminder {
   date: string;
   time: string;
   priority: string;
-  completed: boolean;
+  completed: boolean | number;
 }
 
 export default function RemindersPage() {
-  const [reminders, setReminders] = useState<Reminder[]>([
-    { id: 1, title: 'Reunión con el equipo', date: '2025-03-04', time: '10:00', priority: 'Alta', completed: false },
-    { id: 2, title: 'Comprar comida para el gato', date: '2025-03-05', time: '18:00', priority: 'Media', completed: false },
-    { id: 3, title: 'Llamar al médico', date: '2025-03-06', time: '09:00', priority: 'Baja', completed: true },
-  ]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [search, setSearch] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentReminder, setCurrentReminder] = useState<Reminder | null>(null);
+
+  useEffect(() => {
+    fetchReminders();
+  }, []);
+
+  const fetchReminders = async () => {
+    try {
+      const res = await fetch('/api/reminders');
+      const data = await res.json();
+      setReminders(data);
+    } catch (error) {
+      console.error("Error fetching reminders:", error);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentReminder) return;
+
+    const method = currentReminder.id ? 'PUT' : 'POST';
+    const url = currentReminder.id ? `/api/reminders/${currentReminder.id}` : '/api/reminders';
+    
+    // Ensure completed is stored as 0 or 1 for SQLite
+    const payload = {
+      ...currentReminder,
+      completed: currentReminder.completed ? 1 : 0
+    };
+
+    try {
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      setIsModalOpen(false);
+      fetchReminders();
+    } catch (error) {
+      console.error("Error saving reminder:", error);
+    }
+  };
+
+  const toggleComplete = async (reminder: Reminder) => {
+    const updated = { ...reminder, completed: !reminder.completed ? 1 : 0 };
+    try {
+      await fetch(`/api/reminders/${reminder.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      fetchReminders();
+    } catch (error) {
+      console.error("Error toggling reminder:", error);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este recordatorio?')) return;
+    try {
+      await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
+      fetchReminders();
+    } catch (error) {
+      console.error("Error deleting reminder:", error);
+    }
+  };
 
   const filteredReminders = reminders.filter(r => 
     r.title.toLowerCase().includes(search.toLowerCase())
@@ -30,7 +92,13 @@ export default function RemindersPage() {
           <h2 className="text-3xl font-bold text-slate-800">Recordatorios</h2>
           <p className="text-slate-400">Tus alertas y notificaciones</p>
         </div>
-        <button className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100 flex items-center gap-2 font-bold">
+        <button 
+          onClick={() => {
+            setCurrentReminder({ title: '', date: new Date().toISOString().split('T')[0], time: '12:00', priority: 'Media', completed: 0 });
+            setIsModalOpen(true);
+          }}
+          className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100 flex items-center gap-2 font-bold"
+        >
           <Plus size={20} /> Nuevo
         </button>
       </div>
@@ -47,15 +115,24 @@ export default function RemindersPage() {
       </div>
 
       <div className="space-y-4">
+        {filteredReminders.length === 0 && (
+          <div className="text-center py-20 bg-white rounded-[40px] border border-dashed border-slate-200">
+            <Bell className="mx-auto text-slate-200 mb-4" size={48} />
+            <p className="text-slate-400">No hay recordatorios pendientes</p>
+          </div>
+        )}
         {filteredReminders.map(reminder => (
-          <div key={reminder.id} className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex items-center gap-4 group cursor-pointer hover:border-indigo-200 transition-all">
-            <div className={cn(
-              "w-12 h-12 rounded-2xl flex items-center justify-center",
-              reminder.completed ? "bg-emerald-50 text-emerald-600" : "bg-indigo-50 text-indigo-600"
-            )}>
+          <div key={reminder.id} className="bg-white p-6 rounded-3xl border border-slate-100 card-shadow flex items-center gap-4 group hover:border-indigo-200 transition-all">
+            <button 
+              onClick={() => toggleComplete(reminder)}
+              className={cn(
+                "w-12 h-12 rounded-2xl flex items-center justify-center transition-colors",
+                reminder.completed ? "bg-emerald-50 text-emerald-600" : "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+              )}
+            >
               <Bell size={24} />
-            </div>
-            <div className="flex-1">
+            </button>
+            <div className="flex-1 cursor-pointer" onClick={() => { setCurrentReminder(reminder); setIsModalOpen(true); }}>
               <h4 className={cn("font-bold text-slate-800", reminder.completed && "line-through text-slate-300")}>{reminder.title}</h4>
               <div className="flex items-center gap-3 mt-1">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
@@ -72,10 +149,96 @@ export default function RemindersPage() {
                 </span>
               </div>
             </div>
-            <button className="p-2 text-slate-300 group-hover:text-slate-500"><MoreVertical size={20} /></button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => handleDelete(reminder.id!)}
+                className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={20} />
+              </button>
+            </div>
           </div>
         ))}
       </div>
+
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-slate-800">{currentReminder?.id ? 'Editar' : 'Nuevo'} Recordatorio</h3>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X size={24} /></button>
+              </div>
+              <form onSubmit={handleSave} className="p-8 space-y-6">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Título</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={currentReminder?.title}
+                    onChange={e => setCurrentReminder(prev => prev ? ({ ...prev, title: e.target.value }) : null)}
+                    className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 transition-all font-bold text-slate-800"
+                    placeholder="¿Qué quieres recordar?"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Fecha</label>
+                    <input 
+                      type="date" 
+                      required
+                      value={currentReminder?.date}
+                      onChange={e => setCurrentReminder(prev => prev ? ({ ...prev, date: e.target.value }) : null)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 transition-all text-sm font-bold text-slate-800"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Hora</label>
+                    <input 
+                      type="time" 
+                      required
+                      value={currentReminder?.time}
+                      onChange={e => setCurrentReminder(prev => prev ? ({ ...prev, time: e.target.value }) : null)}
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-6 outline-none focus:border-indigo-400 transition-all text-sm font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-2">Prioridad</label>
+                  <div className="flex gap-2">
+                    {['Baja', 'Media', 'Alta'].map(p => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setCurrentReminder(prev => prev ? ({ ...prev, priority: p }) : null)}
+                        className={cn(
+                          "flex-1 py-3 rounded-xl text-xs font-bold transition-all border",
+                          currentReminder?.priority === p 
+                            ? "bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100" 
+                            : "bg-white text-slate-400 border-slate-100 hover:bg-slate-50"
+                        )}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button 
+                  type="submit"
+                  className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                >
+                  <Save size={20} /> Guardar Recordatorio
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

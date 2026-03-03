@@ -33,23 +33,45 @@ export default function TasksPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentTask) return;
-    await fetch('/api/tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(currentTask)
-    });
-    setIsCreatorOpen(false);
-    fetchTasks();
+    
+    const method = currentTask.id ? 'PUT' : 'POST';
+    const url = currentTask.id ? `/api/tasks/${currentTask.id}` : '/api/tasks';
+
+    try {
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentTask)
+      });
+      setIsCreatorOpen(false);
+      fetchTasks();
+    } catch (error) {
+      console.error("Error saving task:", error);
+    }
   };
 
   const toggleComplete = async (task: Task) => {
-    // Simplified update
-    await fetch('/api/tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...task, completed: task.completed ? 0 : 1 })
-    });
-    fetchTasks();
+    const updated = { ...task, completed: task.completed ? 0 : 1 };
+    try {
+      await fetch(`/api/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      fetchTasks();
+    } catch (error) {
+      console.error("Error toggling task:", error);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar esta tarea?')) return;
+    try {
+      await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      fetchTasks();
+    } catch (error) {
+      console.error("Error deleting task:", error);
+    }
   };
 
   const filteredTasks = tasks.filter(t => 
@@ -140,7 +162,20 @@ export default function TasksPage() {
                 </span>
               </div>
             </div>
-            <button className="p-2 text-slate-300 group-hover:text-slate-500"><MoreVertical size={20} /></button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => { setCurrentTask(task); setIsCreatorOpen(true); }}
+                className="p-2 text-slate-300 hover:text-indigo-600 transition-colors"
+              >
+                <MoreVertical size={20} />
+              </button>
+              <button 
+                onClick={() => handleDelete(task.id!)}
+                className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={20} />
+              </button>
+            </div>
           </div>
         ))}
       </div>
@@ -165,7 +200,7 @@ export default function TasksPage() {
               className="bg-white w-full max-w-lg rounded-t-3xl lg:rounded-3xl p-8 space-y-6"
             >
               <div className="flex justify-between items-center">
-                <h3 className="text-2xl font-bold text-slate-800">Nueva Tarea</h3>
+                <h3 className="text-2xl font-bold text-slate-800">{currentTask?.id ? 'Editar Tarea' : 'Nueva Tarea'}</h3>
                 <button onClick={() => setIsCreatorOpen(false)} className="p-2 text-slate-400"><X size={24} /></button>
               </div>
 
@@ -218,7 +253,7 @@ export default function TasksPage() {
                 onClick={handleSave}
                 className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"
               >
-                Crear Tarea
+                {currentTask?.id ? 'Guardar Cambios' : 'Crear Tarea'}
               </button>
             </motion.div>
           </div>

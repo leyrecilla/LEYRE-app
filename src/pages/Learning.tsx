@@ -33,13 +33,32 @@ export default function LearningPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentResource) return;
-    await fetch('/api/learning', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(currentResource)
-    });
-    setIsEditorOpen(false);
-    fetchResources();
+
+    const method = currentResource.id ? 'PUT' : 'POST';
+    const url = currentResource.id ? `/api/learning/${currentResource.id}` : '/api/learning';
+
+    try {
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentResource)
+      });
+      setIsEditorOpen(false);
+      fetchResources();
+    } catch (error) {
+      console.error("Error saving resource:", error);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este recurso?')) return;
+    try {
+      await fetch(`/api/learning/${id}`, { method: 'DELETE' });
+      setIsEditorOpen(false);
+      fetchResources();
+    } catch (error) {
+      console.error("Error deleting resource:", error);
+    }
   };
 
   const filteredResources = resources.filter(r => 
@@ -139,9 +158,16 @@ export default function LearningPage() {
           >
             <div className="p-4 border-b flex items-center justify-between">
               <button onClick={() => setIsEditorOpen(false)} className="p-2 text-slate-500"><X size={24} /></button>
-              <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2">
-                <Save size={18} /> Guardar
-              </button>
+              <div className="flex gap-2">
+                {currentResource?.id && (
+                  <button onClick={() => handleDelete(currentResource.id!)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-colors">
+                    <Trash2 size={20} />
+                  </button>
+                )}
+                <button onClick={handleSave} className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2">
+                  <Save size={18} /> Guardar
+                </button>
+              </div>
             </div>
             
             <div className="flex-1 p-6 space-y-6 overflow-y-auto max-w-2xl mx-auto w-full">
