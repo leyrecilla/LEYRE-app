@@ -1,0 +1,7 @@
+{
+  "name": "MindFlow - Tu Segundo Cerebro",
+  "description": "Aplicación de productividad integral con gestión de notas, tareas, aprendizaje, libros y asistente IA personal.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
